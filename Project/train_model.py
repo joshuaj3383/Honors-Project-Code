@@ -5,7 +5,6 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Subset
-from torch.profiler import profile, ProfilerActivity
 import random
 import numpy as np
 import pandas as pd
@@ -98,7 +97,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
         correct += (predicted == labels).sum().item()
         total += labels.size(0)
 
-        loop.set_postfix(loss=loss.Foritem())
+        loop.set_postfix(loss=loss.item())
 
     return total_loss / total, correct / total
 
@@ -128,7 +127,6 @@ def evaluate(model, loader, criterion, device):
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
 
 def count_FLOPs(model, train_loader, num_epochs, batch_size, device):
     # Calculate FLOPs
@@ -365,25 +363,28 @@ if __name__ == "__main__":
 
     widths = [8, 16, 32, 64, 128]
     depths = [1, 2, 3]
+    datasize = [6250,12500,25000,50000]
 
     batch_size = 512
     num_epochs = 1
 
-    train_loader, _ = load_datasets(batch_size=batch_size)
 
-    for width in widths:
-        for depth in depths:
-            model = build_model(width, depth, device)
+    for dsize in datasize:
+        train_loader, _ = load_datasets(batch_size=batch_size,dataset_size=dsize)
+        print(f"Dataset Size: {dsize}")
+        for width in widths:
+            for depth in depths:
+                model = build_model(width, depth, device)
 
-            flops_forward, total_FLOPs, steps = count_FLOPs(
-                model=model,
-                train_loader=train_loader,
-                num_epochs=num_epochs,
-                batch_size=batch_size,
-                device=device
-            )
+                flops_forward, total_FLOPs, steps = count_FLOPs(
+                    model=model,
+                    train_loader=train_loader,
+                    num_epochs=num_epochs,
+                    batch_size=batch_size,
+                    device=device
+                )
 
-            print(f"Width: {width}, Depth: {depth}, Total FLOPs: {total_FLOPs:.3e}")
+                print(f"Width: {width}, Depth: {depth}, Total FLOPs: {total_FLOPs:.3e}")
 
     exit()
 
