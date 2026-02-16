@@ -4,6 +4,9 @@ data/
 # IDEA
 .idea/
 
+#
+/Project_Code/results/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
