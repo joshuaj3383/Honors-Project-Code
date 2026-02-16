@@ -128,14 +128,14 @@ def evaluate(model, loader, criterion, device):
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+
 def count_FLOPs(model, train_loader, num_epochs, batch_size, device):
-    # Calculate FLOPs
     model.eval()
     dummy = torch.randn(batch_size, 3, 32, 32).to(device)
     flops_forward, _ = profile(model, inputs=(dummy,), verbose=False)
 
     steps = len(train_loader) * num_epochs
-    total_flops = 3 * flops_forward * steps  # forward + backward ≈ 3x
+    total_flops = 3 * flops_forward * steps
 
     return flops_forward, total_flops, steps
 
@@ -208,7 +208,8 @@ def build_optimizer(model, num_epochs):
 
 
 def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
-                       criterion, device, num_epochs, test_freq):
+                       criterion, device, num_epochs, test_freq,
+                       run_csv_path=None):
 
     final_loss_avg = 0
     final_acc_avg = 0
@@ -227,6 +228,11 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
 
         scheduler.step()
 
+        test_loss = np.nan
+        test_acc = np.nan
+
+        print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}")
+
         if (epoch + 1) % test_freq == 0 or epoch >= num_epochs - last_k:
             test_loss, test_acc = evaluate(
                 model, test_loader, criterion, device
@@ -239,11 +245,26 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
                 final_loss_avg += test_loss
                 final_acc_avg += test_acc
 
-        epoch_records.append({
+            print(f"Test  Loss: {test_loss:.4f}, Test  Acc: {test_acc:.4f}")
+
+        record = {
             "epoch": epoch + 1,
             "train_loss": train_loss,
             "train_acc": train_acc,
-        })
+            "test_loss": test_loss,
+            "test_acc": test_acc
+        }
+
+        epoch_records.append(record)
+
+        if run_csv_path is not None:
+            row = pd.DataFrame([record])
+            row.to_csv(
+                run_csv_path,
+                mode="a",
+                header=not os.path.exists(run_csv_path),
+                index=False
+            )
 
     final_acc_avg /= last_k
     final_loss_avg /= last_k
@@ -308,6 +329,9 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
     criterion = nn.CrossEntropyLoss()
     optimizer, scheduler = build_optimizer(model, num_epochs)
 
+    os.makedirs("results/runs", exist_ok=True)
+    run_csv_path = f"results/runs/width{width}_depth{depth}_seed{seed}.csv"
+
     results = train_and_evaluate(
         model=model,
         train_loader=train_loader,
@@ -317,7 +341,8 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
         criterion=criterion,
         device=device,
         num_epochs=num_epochs,
-        test_freq=test_freq
+        test_freq=test_freq,
+        run_csv_path=run_csv_path
     )
 
     save_epoch_log(results["epoch_records"], width, depth, seed)
@@ -370,4 +395,3 @@ if __name__ == "__main__":
         depth=args.depth,
         dataset_size=args.dataset_size
     )
-
