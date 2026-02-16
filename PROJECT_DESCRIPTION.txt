@@ -1,0 +1,169 @@
+PROJECT: CIFAR-10 Scaling Laws (CNN)
+
+GOAL
+-----
+Empirically study scaling laws in vision using CIFAR-10.
+Measure how test loss scales with:
+- N (number of parameters)
+- D (dataset size)
+- C ≈ N * D * epochs
+
+Inspired by Kaplan et al. 2020 scaling framework.
+
+
+DATASET
+--------
+Dataset: CIFAR-10
+Training size: up to 50,000 images
+Test size: 10,000 images
+Transforms:
+- RandomCrop(32, padding=4)
+- RandomHorizontalFlip()
+- ToTensor()
+
+Dataset scaling:
+- Controlled using torch.utils.data.Subset
+- Subset chosen via numpy RNG with fixed seed
+- D = len(train_loader.dataset)
+
+
+MODEL
+------
+Architecture: 3-stage CNN
+
+Each stage:
+- ConvBlock(in_channels → out_channels)
+- ConvBlock(out_channels → out_channels)
+- MaxPool2d(2) after stage 1 and 2
+
+Channels scale as:
+stage1: width
+stage2: 2 * width
+stage3: 4 * width
+
+Final:
+- AdaptiveAvgPool2d(1)
+- Linear(4 * width → 10)
+
+ConvBlock:
+- Conv2d(kernel_size=3, padding=1)
+- BatchNorm2d
+- ReLU
+
+Scalable parameters:
+- width (base channel multiplier)
+- blocks_per_stage (depth per stage)
+
+N:
+- Counted using sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+TRAINING
+---------
+Optimizer:
+- SGD
+- lr=0.1
+- momentum=0.9
+- weight_decay=5e-4
+
+Scheduler:
+- CosineAnnealingLR
+- T_max = num_epochs
+
+Batch size: typically 256
+Epochs: typically 100
+Test frequency: every 5 epochs
+Final metric: average of last 5 test evaluations
+
+
+METRICS
+--------
+Logged per run:
+- width
+- depth
+- seed
+- N
+- D
+- C = N * D * epochs
+- epochs
+- final_test_loss_avg_last5
+- final_test_acc_avg_last5
+- best_test_loss
+- best_test_acc
+
+Per-epoch logging:
+- epoch
+- train_loss
+- train_acc
+
+
+STRUCTURE
+----------
+Single experiment runner:
+run_experiment(seed, batch_size, num_epochs, test_freq, width, depth, dataset_size)
+
+CLI arguments handled via argparse:
+--seed
+--batch_size
+--num_epochs
+--test_freq
+--width
+--depth
+--dataset_size
+
+One run = one configuration.
+
+
+DIRECTORY STRUCTURE
+--------------------
+data/          # raw CIFAR-10
+results/
+    runs/      # per-run CSV logs
+    final_data.csv  # summary of all runs
+
+
+REPRODUCIBILITY
+----------------
+set_seed(seed):
+- random.seed
+- numpy.seed
+- torch.manual_seed
+- torch.cuda.manual_seed_all
+- cudnn.deterministic=True
+- cudnn.benchmark=False
+
+
+SCALING PLAN
+-------------
+1. Width scaling (depth fixed, D fixed)
+2. Depth scaling (width fixed, D fixed)
+3. Dataset scaling (width fixed, depth fixed)
+4. Constant-compute experiments (N * D * epochs ≈ constant)
+
+
+ASSUMPTIONS
+------------
+- D does NOT include epochs
+- Epochs affect compute, not dataset size
+- Final performance = averaged over last 5 epochs
+- Compute proxy C used consistently across runs
+- No early stopping used
+- No mixed precision currently
+
+
+KNOWN LIMITATIONS
+------------------
+- C is proxy, not true FLOPs
+- Best test loss initialized at 0 (may need inf)
+- Per-epoch CSV does not log test loss every epoch
+
+
+ENVIRONMENT
+------------
+- PyTorch
+- torchvision
+- pandas
+- numpy
+- tqdm
+- argparse
+- GPU when available (T4 in Colab)
