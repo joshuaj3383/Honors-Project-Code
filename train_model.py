@@ -60,14 +60,14 @@ def load_datasets(batch_size=128, dataset_size=50000, seed=2026):
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=2
+        num_workers=0
     )
 
     test_loader = DataLoader(
         test_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=2
+        num_workers=0
     )
 
     return train_loader, test_loader
@@ -223,7 +223,7 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
                        criterion, device, num_epochs, test_freq):
     final_loss_avg = 0
     final_acc_avg = 0
-    best_test_loss = 0
+    best_test_loss = 999
     best_test_acc = 0
     epoch_records = []
 
@@ -233,8 +233,6 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
         train_loss, train_acc = train_one_epoch(
             model, train_loader, optimizer, criterion, device
         )
-
-        current_lr = optimizer.param_groups[0]["lr"]
 
         scheduler.step()
 
@@ -357,7 +355,7 @@ def parse_args():
 
     parser.add_argument("--seed", type=int, default=0)
 
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--test_freq", type=int, default=5)
 
