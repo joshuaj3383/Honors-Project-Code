@@ -359,35 +359,6 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    widths = [8, 16, 32, 64, 128]
-    depths = [1, 2, 3]
-    datasize = [6250,12500,25000,50000]
-
-    batch_size = 512
-    num_epochs = 1
-
-
-    for dsize in datasize:
-        train_loader, _ = load_datasets(batch_size=batch_size,dataset_size=dsize)
-        print(f"Dataset Size: {dsize}")
-        for width in widths:
-            for depth in depths:
-                model = build_model(width, depth, device)
-
-                flops_forward, total_FLOPs, steps = count_FLOPs(
-                    model=model,
-                    train_loader=train_loader,
-                    num_epochs=num_epochs,
-                    batch_size=batch_size,
-                    device=device
-                )
-
-                print(f"Width: {width}, Depth: {depth}, Total FLOPs: {total_FLOPs:.3e}")
-
-    exit()
-
     args = parse_args()
 
     run_experiment(
