@@ -1,0 +1,26 @@
+{
+  "N-width" : {
+    "width" : [8,16,32,64,128],
+    "depth" : [2],
+    "dataset_size": [50000],
+    "seeds_choice": [0,1]
+  },
+  "N-depth" : {
+    "width" : [32],
+    "depth" : [1,2,3],
+    "dataset_size": [50000],
+    "seeds_choice": [0,1]
+  },
+  "D" : {
+    "width" : [32],
+    "depth" : [2],
+    "dataset_size": [6250,12500,25000,50000],
+    "seeds_choice": [0,1]
+  },
+  "C" : {
+
+  }
+
+}
+
+

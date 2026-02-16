@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Subset
+from torch.profiler import profile, ProfilerActivity
 import random
 import numpy as np
 import pandas as pd
@@ -14,8 +15,8 @@ from tqdm import tqdm
 from thop import profile
 
 
-def set_seed(seed: int = 2026):
-    """Reproducability"""
+def set_seed(seed=0):
+    """Reproducibility"""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -25,7 +26,7 @@ def set_seed(seed: int = 2026):
     torch.backends.cudnn.benchmark = False
 
 
-def load_datasets(batch_size=128, dataset_size=50000, seed=2026):
+def load_datasets(batch_size=128, dataset_size=50000, seed=0):
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -97,7 +98,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
         correct += (predicted == labels).sum().item()
         total += labels.size(0)
 
-        loop.set_postfix(loss=loss.item())
+        loop.set_postfix(loss=loss.Foritem())
 
     return total_loss / total, correct / total
 
@@ -127,6 +128,18 @@ def evaluate(model, loader, criterion, device):
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def count_FLOPs(model, train_loader, num_epochs, batch_size, device):
+    # Calculate FLOPs
+    model.eval()
+    dummy = torch.randn(batch_size, 3, 32, 32).to(device)
+    flops_forward, _ = profile(model, inputs=(dummy,), verbose=False)
+
+    steps = len(train_loader) * num_epochs
+    total_flops = 3 * flops_forward * steps  # forward + backward ≈ 3x
+
+    return flops_forward, total_flops, steps
 
 
 def proxy_compute(N, D, epochs):
@@ -253,6 +266,7 @@ def save_epoch_log(epoch_records, width, depth, seed):
 
 
 def append_summary(summary_row):
+    os.makedirs("results", exist_ok=True)
     summary_path = "results/final_data.csv"
 
     if os.path.exists(summary_path):
@@ -282,13 +296,13 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
 
     model = build_model(width, depth, device)
 
-    # Calculate FLOPs
-    model.eval()
-    dummy = torch.randn(batch_size, 3, 32, 32).to(device)
-    flops_forward, _ = profile(model, inputs=(dummy,), verbose=False)
-
-    steps = len(train_loader) * num_epochs
-    total_flops = 3 * flops_forward * steps  # forward + backward ≈ 3x
+    flops_forward, total_flops, steps = count_FLOPs(
+        model=model,
+        train_loader=train_loader,
+        num_epochs=num_epochs,
+        batch_size=batch_size,
+        device=device
+    )
 
     print(f"Forward FLOPs per batch: {flops_forward:.3e}")
     print(f"Total Training FLOPs: {total_flops:.3e}")
@@ -347,6 +361,32 @@ def parse_args():
 
 
 if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    widths = [8, 16, 32, 64, 128]
+    depths = [1, 2, 3]
+
+    batch_size = 512
+    num_epochs = 1
+
+    train_loader, _ = load_datasets(batch_size=batch_size)
+
+    for width in widths:
+        for depth in depths:
+            model = build_model(width, depth, device)
+
+            flops_forward, total_FLOPs, steps = count_FLOPs(
+                model=model,
+                train_loader=train_loader,
+                num_epochs=num_epochs,
+                batch_size=batch_size,
+                device=device
+            )
+
+            print(f"Width: {width}, Depth: {depth}, Total FLOPs: {total_FLOPs:.3e}")
+
+    exit()
+
     args = parse_args()
 
     run_experiment(
@@ -358,3 +398,4 @@ if __name__ == "__main__":
         depth=args.depth,
         dataset_size=args.dataset_size
     )
+
