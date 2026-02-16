@@ -11,6 +11,7 @@ import pandas as pd
 import os
 import argparse
 from tqdm import tqdm
+from thop import profile
 
 
 def set_seed(seed: int = 2026):
@@ -25,7 +26,6 @@ def set_seed(seed: int = 2026):
 
 
 def load_datasets(batch_size=128, dataset_size=50000, seed=2026):
-    """Loads datasets with given batch size"""
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -43,7 +43,6 @@ def load_datasets(batch_size=128, dataset_size=50000, seed=2026):
         transform=transform_train
     )
 
-    # Select a random portion of the training dataset to control training size
     if dataset_size is not None:
         rng = np.random.default_rng(seed)
         indices = rng.permutation(len(train_dataset))[:dataset_size]
@@ -74,7 +73,6 @@ def load_datasets(batch_size=128, dataset_size=50000, seed=2026):
 
 
 def train_one_epoch(model, loader, optimizer, criterion, device):
-    """Runs through the dataset a single time and report information"""
     model.train()
 
     total_loss = 0
@@ -88,7 +86,6 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
         labels = labels.to(device)
 
         optimizer.zero_grad()
-
         outputs = model(images)
         loss = criterion(outputs, labels)
 
@@ -106,7 +103,6 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
 
 
 def evaluate(model, loader, criterion, device):
-    """Evalutes model on test dataset and reports statistics"""
     model.eval()
 
     total_loss = 0
@@ -129,26 +125,12 @@ def evaluate(model, loader, criterion, device):
     return total_loss / total, correct / total
 
 
-"""
-Calculation functions
-"""
-
-# N: Model Parameters
 def count_parameters(model):
-    """Counts the number of trainable parameters in a model"""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-# C: Total Compute
-def total_compute(N, D, epochs):
-    """Note that although C is traditionally FLOPs, we can approximate it in this way"""
+def proxy_compute(N, D, epochs):
     return N * D * epochs
-
-
-"""
-=======Model Definition=======
-Structure:
-"""
 
 
 class ConvBlock(nn.Module):
@@ -182,25 +164,20 @@ class CNN(nn.Module):
 
         x = self.stage3(x)
 
-        # Global average pooling
         x = self.global_pool(x)
         x = torch.flatten(x, 1)
 
         return self.fc(x)
 
     def _make_stage(self, in_channels, out_channels, num_blocks):
-        """Private function for creating a stage of CNN blocks before pooling."""
         layers = [ConvBlock(in_channels, out_channels)]
-
         for _ in range(num_blocks - 1):
             layers.append(ConvBlock(out_channels, out_channels))
-
         return nn.Sequential(*layers)
 
 
 def build_model(width, depth, device):
-    model = CNN(width, depth).to(device)
-    return model
+    return CNN(width, depth).to(device)
 
 
 def build_optimizer(model, num_epochs):
@@ -221,11 +198,14 @@ def build_optimizer(model, num_epochs):
 
 def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
                        criterion, device, num_epochs, test_freq):
+
     final_loss_avg = 0
     final_acc_avg = 0
-    best_test_loss = 999
+    best_test_loss = float("inf")
     best_test_acc = 0
     epoch_records = []
+
+    last_k = min(5, num_epochs)
 
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch + 1}/{num_epochs}")
@@ -236,12 +216,7 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
 
         scheduler.step()
 
-        print(
-            f"Train Loss: {train_loss:.4f} | "
-            f"Train Acc: {train_acc:.4f} | "
-        )
-
-        if (epoch + 1) % test_freq == 0 or epoch >= num_epochs - 5:
+        if (epoch + 1) % test_freq == 0 or epoch >= num_epochs - last_k:
             test_loss, test_acc = evaluate(
                 model, test_loader, criterion, device
             )
@@ -249,14 +224,9 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
             best_test_acc = max(best_test_acc, test_acc)
             best_test_loss = min(best_test_loss, test_loss)
 
-            if epoch >= num_epochs - 5:
+            if epoch >= num_epochs - last_k:
                 final_loss_avg += test_loss
                 final_acc_avg += test_acc
-
-            print(
-                f"Test Loss: {test_loss:.4f} | "
-                f"Test Acc: {test_acc:.4f} | "
-            )
 
         epoch_records.append({
             "epoch": epoch + 1,
@@ -264,8 +234,8 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
             "train_acc": train_acc,
         })
 
-    final_acc_avg /= 5
-    final_loss_avg /= 5
+    final_acc_avg /= last_k
+    final_loss_avg /= last_k
 
     return {
         "final_loss_avg": final_loss_avg,
@@ -278,9 +248,8 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
 
 def save_epoch_log(epoch_records, width, depth, seed):
     df = pd.DataFrame(epoch_records)
-    epoch_log_path = f"results/runs/width{width}_depth{depth}_seed{seed}.csv"
     os.makedirs("results/runs", exist_ok=True)
-    df.to_csv(epoch_log_path, index=False)
+    df.to_csv(f"results/runs/width{width}_depth{depth}_seed{seed}.csv", index=False)
 
 
 def append_summary(summary_row):
@@ -300,11 +269,10 @@ def append_summary(summary_row):
 
 def run_experiment(seed, batch_size, num_epochs, test_freq,
                    width, depth, dataset_size):
+
     set_seed(seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Is CUDA available: {torch.cuda.is_available()}")
-    print(f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NONE'}")
 
     train_loader, test_loader = load_datasets(
         batch_size=batch_size,
@@ -313,6 +281,18 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
     )
 
     model = build_model(width, depth, device)
+
+    # Calculate FLOPs
+    model.eval()
+    dummy = torch.randn(batch_size, 3, 32, 32).to(device)
+    flops_forward, _ = profile(model, inputs=(dummy,), verbose=False)
+
+    steps = len(train_loader) * num_epochs
+    total_flops = 3 * flops_forward * steps  # forward + backward ≈ 3x
+
+    print(f"Forward FLOPs per batch: {flops_forward:.3e}")
+    print(f"Total Training FLOPs: {total_flops:.3e}")
+
     criterion = nn.CrossEntropyLoss()
     optimizer, scheduler = build_optimizer(model, num_epochs)
 
@@ -339,8 +319,10 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
         "seed": seed,
         "N": N,
         "D": D,
-        "C": total_compute(N, D, num_epochs),
         "epochs": num_epochs,
+        "steps": steps,
+        "C_proxy": proxy_compute(N, D, num_epochs),
+        "total_flops": total_flops,
         "final_test_loss_avg_last5": results["final_loss_avg"],
         "final_test_acc_avg_last5": results["final_acc_avg"],
         "best_test_loss": results["best_test_loss"],
@@ -354,16 +336,15 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--seed", type=int, default=0)
-
     parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--test_freq", type=int, default=5)
-
     parser.add_argument("--width", type=int, default=32)
     parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--dataset_size", type=int, default=50000)
 
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     args = parse_args()
