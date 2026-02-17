@@ -2,6 +2,19 @@
 
 ## Benchmark Model Structure:
 
+Before testing over multiple hyperparameters, a benchmark model structure was required as a base.
+Choosing the correct base architecture is vital as it needs to relatively small and trainable while also being accurate.
+The model needs to be small for training efficiency and to avoid skewing results. 
+It needs to be accurate as scaling laws require models to be trained near optimal loss. 
+
+Based on paper (TODO CITATIONS) the recommended model architecture for speed and efficiency is a 
+CNN which follows this architecture: 
+
+
+From test results this model would score around 90% accuracy by around 100 epochs which is a good baseline as the model
+sits at a relatively small 290,000 parameters (compared to most other benchmarked models).
+
+
 
 
 
