@@ -4,6 +4,14 @@ import json
 from train_model import run_experiment
 
 
+####################################################################
+#   Does sweep training through specified sets of parameters       #
+#   Created by Joshua Johnston                                     #
+#   BHCC Honors Project Spring 2026                                #
+#   Writen for Notebook                                            #
+####################################################################
+
+
 def sweep_train(
         widths,
         depths,
@@ -20,11 +28,12 @@ def sweep_train(
 
     summary_path = os.path.join(results_dir, "final_data.csv")
 
+    # Horrendous loop but it's a small script
     for seed in seeds:
         for width in widths:
             for depth in depths:
                 for dataset_size in dataset_sizes:
-
+                    # Check if done
                     if os.path.exists(summary_path):
                         df = pd.read_csv(summary_path)
                         already_done = (
@@ -40,6 +49,7 @@ def sweep_train(
 
                     print(f"Running: w={width}, d={depth}, D={dataset_size}, seed={seed}")
 
+                    # Train a model based on these parameters
                     run_experiment(
                         seed=seed,
                         batch_size=batch_size,
@@ -54,13 +64,18 @@ def sweep_train(
 
 if __name__ == "__main__":
 
+    # Google Drive Location
     BASE_DIR = "/content/drive/MyDrive/cifar_scaling"
+    # JSON
+    JSON_FILE = "Experiment_Parameters.json"
 
+    # Constants
     batch_size = 512
     num_epochs = 100
     test_freq = 5
 
-    with open(os.path.join(BASE_DIR, "Experiment_Parameters.json"), "r") as f:
+    # Train based on json file
+    with open(os.path.join(BASE_DIR, JSON_FILE), "r") as f:
         data = json.load(f)
 
         for train_name in data:
