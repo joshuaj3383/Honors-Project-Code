@@ -5,9 +5,9 @@ data/
 .idea/
 
 #
-/Project_Code/results/
-/Project_Code/data
-/Project_Code/checkpoints
+/Training_Code/results/
+/Training_Code/data
+/Training_Code/checkpoints
 
 
 # Byte-compiled / optimized / DLL files
