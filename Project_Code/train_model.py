@@ -14,8 +14,11 @@ from tqdm import tqdm
 from thop import profile
 
 
+# =========================================================
+# Reproducibility
+# =========================================================
+
 def set_seed(seed=0):
-    """Reproducibility"""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -24,6 +27,10 @@ def set_seed(seed=0):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+
+# =========================================================
+# Dataset
+# =========================================================
 
 def load_datasets(batch_size=128, dataset_size=50000, seed=0):
     transform_train = transforms.Compose([
@@ -55,40 +62,74 @@ def load_datasets(batch_size=128, dataset_size=50000, seed=0):
         transform=transform_test
     )
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=0
-    )
-
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=0
-    )
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
     return train_loader, test_loader
 
 
+# =========================================================
+# Model
+# =========================================================
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(out_channels)
+
+    def forward(self, x):
+        return F.relu(self.bn(self.conv(x)))
+
+
+class CNN(nn.Module):
+    def __init__(self, width=32, blocks_per_stage=2):
+        super().__init__()
+        self.stage1 = self._make_stage(3, width, blocks_per_stage)
+        self.stage2 = self._make_stage(width, 2 * width, blocks_per_stage)
+        self.stage3 = self._make_stage(2 * width, 4 * width, blocks_per_stage)
+
+        self.pool = nn.MaxPool2d(2)
+        self.global_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Linear(4 * width, 10)
+
+    def _make_stage(self, in_channels, out_channels, num_blocks):
+        layers = [ConvBlock(in_channels, out_channels)]
+        for _ in range(num_blocks - 1):
+            layers.append(ConvBlock(out_channels, out_channels))
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.stage1(x)
+        x = self.pool(x)
+        x = self.stage2(x)
+        x = self.pool(x)
+        x = self.stage3(x)
+        x = self.global_pool(x)
+        x = torch.flatten(x, 1)
+        return self.fc(x)
+
+
+def build_model(width, depth, device):
+    return CNN(width, depth).to(device)
+
+
+# =========================================================
+# Training + Eval
+# =========================================================
+
 def train_one_epoch(model, loader, optimizer, criterion, device):
     model.train()
-
-    total_loss = 0
-    correct = 0
-    total = 0
+    total_loss, correct, total = 0, 0, 0
 
     loop = tqdm(loader, desc="Training", leave=False)
 
     for images, labels in loop:
-        images = images.to(device)
-        labels = labels.to(device)
+        images, labels = images.to(device), labels.to(device)
 
         optimizer.zero_grad()
         outputs = model(images)
         loss = criterion(outputs, labels)
-
         loss.backward()
         optimizer.step()
 
@@ -104,16 +145,11 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
 
 def evaluate(model, loader, criterion, device):
     model.eval()
-
-    total_loss = 0
-    correct = 0
-    total = 0
+    total_loss, correct, total = 0, 0, 0
 
     with torch.no_grad():
         for images, labels in loader:
-            images = images.to(device)
-            labels = labels.to(device)
-
+            images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             loss = criterion(outputs, labels)
 
@@ -125,127 +161,127 @@ def evaluate(model, loader, criterion, device):
     return total_loss / total, correct / total
 
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+# =========================================================
+# Checkpoint Utilities
+# =========================================================
 
-
-def count_FLOPs(model, train_loader, num_epochs, batch_size, device):
-    model.eval()
-    dummy = torch.randn(batch_size, 3, 32, 32).to(device)
-    flops_forward, _ = profile(model, inputs=(dummy,), verbose=False)
-
-    steps = len(train_loader) * num_epochs
-    total_flops = 3 * flops_forward * steps
-
-    return flops_forward, total_flops, steps
-
-
-def proxy_compute(N, D, epochs):
-    return N * D * epochs
-
-
-class ConvBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int):
-        super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.bn = nn.BatchNorm2d(out_channels)
-
-    def forward(self, x):
-        return F.relu(self.bn(self.conv(x)))
-
-
-class CNN(nn.Module):
-    def __init__(self, width=32, blocks_per_stage=2):
-        super().__init__()
-
-        self.stage1 = self._make_stage(3, width, blocks_per_stage)
-        self.stage2 = self._make_stage(width, 2 * width, blocks_per_stage)
-        self.stage3 = self._make_stage(2 * width, 4 * width, blocks_per_stage)
-
-        self.pool = nn.MaxPool2d(2)
-        self.global_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Linear(4 * width, 10)
-
-    def forward(self, x):
-        x = self.stage1(x)
-        x = self.pool(x)
-
-        x = self.stage2(x)
-        x = self.pool(x)
-
-        x = self.stage3(x)
-
-        x = self.global_pool(x)
-        x = torch.flatten(x, 1)
-
-        return self.fc(x)
-
-    def _make_stage(self, in_channels, out_channels, num_blocks):
-        layers = [ConvBlock(in_channels, out_channels)]
-        for _ in range(num_blocks - 1):
-            layers.append(ConvBlock(out_channels, out_channels))
-        return nn.Sequential(*layers)
-
-
-def build_model(width, depth, device):
-    return CNN(width, depth).to(device)
-
-
-def build_optimizer(model, num_epochs):
-    optimizer = optim.SGD(
-        model.parameters(),
-        lr=0.1,
-        momentum=0.9,
-        weight_decay=5e-4
+def get_checkpoint_dir(base_dir, width, depth, seed, dataset_size):
+    path = os.path.join(
+        base_dir,
+        "checkpoints",
+        f"width{width}_depth{depth}_seed{seed}_D{dataset_size}"
     )
-
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=num_epochs
-    )
-
-    return optimizer, scheduler
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
-def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
-                       criterion, device, num_epochs, test_freq,
-                       run_csv_path=None):
+def save_checkpoint(state, checkpoint_dir, epoch):
+    torch.save(state, os.path.join(checkpoint_dir, f"epoch_{epoch}.pt"))
+    torch.save(state, os.path.join(checkpoint_dir, "latest.pt"))
 
-    final_loss_avg = 0
-    final_acc_avg = 0
+
+def load_checkpoint(checkpoint_dir, model, optimizer, scheduler, device):
+    latest_path = os.path.join(checkpoint_dir, "latest.pt")
+    if not os.path.exists(latest_path):
+        return None
+
+    checkpoint = torch.load(latest_path, map_location=device)
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+    return checkpoint
+
+
+# =========================================================
+# Logging Utilities
+# =========================================================
+
+def log_epoch_to_csv(record, path):
+    df = pd.DataFrame([record])
+    df.to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+
+
+def append_summary(summary_row, base_dir):
+    results_dir = os.path.join(base_dir, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    path = os.path.join(results_dir, "final_data.csv")
+
+    if os.path.exists(path):
+        df = pd.read_csv(path)
+        df = pd.concat([df, pd.DataFrame([summary_row])], ignore_index=True)
+    else:
+        df = pd.DataFrame([summary_row])
+
+    df.to_csv(path, index=False)
+
+
+# =========================================================
+# Experiment
+# =========================================================
+
+def run_experiment(seed, batch_size, num_epochs, test_freq,
+                   width, depth, dataset_size, base_dir):
+
+    set_seed(seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    train_loader, test_loader = load_datasets(batch_size, dataset_size, seed)
+    model = build_model(width, depth, device)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+
+    checkpoint_dir = get_checkpoint_dir(base_dir, width, depth, seed, dataset_size)
+    checkpoint = load_checkpoint(checkpoint_dir, model, optimizer, scheduler, device)
+
+    start_epoch = 0
     best_test_loss = float("inf")
     best_test_acc = 0
-    epoch_records = []
+    final_loss_sum = 0
+    final_acc_sum = 0
+    epochs_for_avg = 0
 
-    last_k = min(5, num_epochs)
+    if checkpoint:
+        print("Resuming from checkpoint.")
+        start_epoch = checkpoint["epoch"] + 1
+        best_test_loss = checkpoint["best_test_loss"]
+        best_test_acc = checkpoint["best_test_acc"]
+        final_loss_sum = checkpoint["final_loss_sum"]
+        final_acc_sum = checkpoint["final_acc_sum"]
+        epochs_for_avg = checkpoint["epochs_for_avg"]
 
-    for epoch in range(num_epochs):
-        print(f"\nEpoch {epoch + 1}/{num_epochs}")
+    runs_dir = os.path.join(base_dir, "results", "runs")
+    os.makedirs(runs_dir, exist_ok=True)
+    run_csv_path = os.path.join(
+        runs_dir,
+        f"width{width}_depth{depth}_seed{seed}.csv"
+    )
 
-        train_loss, train_acc = train_one_epoch(
-            model, train_loader, optimizer, criterion, device
-        )
+    for epoch in range(start_epoch, num_epochs):
+        print(f"Epoch {epoch+1}/{num_epochs}")
 
+        train_loss, train_acc = train_one_epoch(model, train_loader, optimizer, criterion, device)
         scheduler.step()
 
-        test_loss = np.nan
-        test_acc = np.nan
+        test_loss, test_acc = np.nan, np.nan
 
-        print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}")
+        print(f"Train Loss: {train_loss:.4f} Train Acc: {train_acc:.4f}")
 
-        if (epoch + 1) % test_freq == 0 or epoch >= num_epochs - last_k:
-            test_loss, test_acc = evaluate(
-                model, test_loader, criterion, device
-            )
+        if (epoch + 1) % test_freq == 0 or epoch >= num_epochs - min(5, num_epochs):
 
-            best_test_acc = max(best_test_acc, test_acc)
+            test_loss, test_acc = evaluate(model, test_loader, criterion, device)
+
             best_test_loss = min(best_test_loss, test_loss)
+            best_test_acc = max(best_test_acc, test_acc)
+            print(f"Test  Loss: {test_loss:.4f} Test  Acc: {test_acc:.4f}")
 
-            if epoch >= num_epochs - last_k:
-                final_loss_avg += test_loss
-                final_acc_avg += test_acc
-
-            print(f"Test  Loss: {test_loss:.4f}, Test  Acc: {test_acc:.4f}")
+        if epoch >= num_epochs - min(5, num_epochs):
+            final_loss_sum += test_loss
+            final_acc_sum += test_acc
+            epochs_for_avg += 1
 
         record = {
             "epoch": epoch + 1,
@@ -255,118 +291,38 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, scheduler,
             "test_acc": test_acc
         }
 
-        epoch_records.append(record)
+        log_epoch_to_csv(record, run_csv_path)
 
-        if run_csv_path is not None:
-            row = pd.DataFrame([record])
-            row.to_csv(
-                run_csv_path,
-                mode="a",
-                header=not os.path.exists(run_csv_path),
-                index=False
-            )
+        save_checkpoint({
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "best_test_loss": best_test_loss,
+            "best_test_acc": best_test_acc,
+            "final_loss_sum": final_loss_sum,
+            "final_acc_sum": final_acc_sum,
+            "epochs_for_avg": epochs_for_avg,
+        }, checkpoint_dir, epoch)
 
-    final_acc_avg /= last_k
-    final_loss_avg /= last_k
-
-    return {
-        "final_loss_avg": final_loss_avg,
-        "final_acc_avg": final_acc_avg,
-        "best_test_loss": best_test_loss,
-        "best_test_acc": best_test_acc,
-        "epoch_records": epoch_records,
-    }
-
-
-def save_epoch_log(epoch_records, width, depth, seed):
-    df = pd.DataFrame(epoch_records)
-    os.makedirs("results/runs", exist_ok=True)
-    df.to_csv(f"results/runs/width{width}_depth{depth}_seed{seed}.csv", index=False)
-
-
-def append_summary(summary_row):
-    os.makedirs("results", exist_ok=True)
-    summary_path = "results/final_data.csv"
-
-    if os.path.exists(summary_path):
-        df_summary = pd.read_csv(summary_path)
-        df_summary = pd.concat(
-            [df_summary, pd.DataFrame([summary_row])],
-            ignore_index=True
-        )
-    else:
-        df_summary = pd.DataFrame([summary_row])
-
-    df_summary.to_csv(summary_path, index=False)
-
-
-def run_experiment(seed, batch_size, num_epochs, test_freq,
-                   width, depth, dataset_size):
-
-    set_seed(seed)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    train_loader, test_loader = load_datasets(
-        batch_size=batch_size,
-        dataset_size=dataset_size,
-        seed=seed
-    )
-
-    model = build_model(width, depth, device)
-
-    flops_forward, total_flops, steps = count_FLOPs(
-        model=model,
-        train_loader=train_loader,
-        num_epochs=num_epochs,
-        batch_size=batch_size,
-        device=device
-    )
-
-    print(f"Forward FLOPs per batch: {flops_forward:.3e}")
-    print(f"Total Training FLOPs: {total_flops:.3e}")
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer, scheduler = build_optimizer(model, num_epochs)
-
-    os.makedirs("results/runs", exist_ok=True)
-    run_csv_path = f"results/runs/width{width}_depth{depth}_seed{seed}.csv"
-
-    results = train_and_evaluate(
-        model=model,
-        train_loader=train_loader,
-        test_loader=test_loader,
-        optimizer=optimizer,
-        scheduler=scheduler,
-        criterion=criterion,
-        device=device,
-        num_epochs=num_epochs,
-        test_freq=test_freq,
-        run_csv_path=run_csv_path
-    )
-
-    save_epoch_log(results["epoch_records"], width, depth, seed)
-
-    N = count_parameters(model)
-    D = len(train_loader.dataset)
+    final_loss_avg = final_loss_sum / epochs_for_avg
+    final_acc_avg = final_acc_sum / epochs_for_avg
 
     summary_row = {
         "width": width,
         "depth": depth,
         "seed": seed,
-        "N": N,
-        "D": D,
+        "D": len(train_loader.dataset),
         "epochs": num_epochs,
-        "steps": steps,
-        "C_proxy": proxy_compute(N, D, num_epochs),
-        "total_flops": total_flops,
-        "final_test_loss_avg_last5": results["final_loss_avg"],
-        "final_test_acc_avg_last5": results["final_acc_avg"],
-        "best_test_loss": results["best_test_loss"],
-        "best_test_acc": results["best_test_acc"],
+        "final_test_loss_avg_last5": final_loss_avg,
+        "final_test_acc_avg_last5": final_acc_avg,
+        "best_test_loss": best_test_loss,
+        "best_test_acc": best_test_acc,
     }
 
-    append_summary(summary_row)
+    append_summary(summary_row, base_dir)
+
+
 
 
 def parse_args():
@@ -379,6 +335,7 @@ def parse_args():
     parser.add_argument("--width", type=int, default=32)
     parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--dataset_size", type=int, default=50000)
+    parser.add_argument("--base_dir", type=str, default="")
 
     return parser.parse_args()
 
@@ -393,5 +350,6 @@ if __name__ == "__main__":
         test_freq=args.test_freq,
         width=args.width,
         depth=args.depth,
-        dataset_size=args.dataset_size
+        dataset_size=args.dataset_size,
+        base_dir=args.base_dir
     )

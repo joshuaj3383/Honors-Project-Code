@@ -6,6 +6,8 @@ data/
 
 #
 /Project_Code/results/
+/Project_Code/data
+/Project_Code/checkpoints
 
 
 # Byte-compiled / optimized / DLL files
