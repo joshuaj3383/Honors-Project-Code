@@ -113,6 +113,37 @@ class CNN(nn.Module):
 def build_model(width, depth, device):
     return CNN(width, depth).to(device)
 
+# =========================================================
+# Compute Utilities
+# =========================================================
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def count_FLOPs(model, train_loader, num_epochs, batch_size, device):
+    model.eval()
+    dummy = torch.randn(batch_size, 3, 32, 32).to(device)
+    flops_forward, _ = profile(model, inputs=(dummy,), verbose=False)
+
+    # ---- CLEAN UP THOP BUFFERS ----
+    for module in model.modules():
+        if hasattr(module, "total_ops"):
+            del module.total_ops
+        if hasattr(module, "total_params"):
+            del module.total_params
+    # --------------------------------
+
+    steps = len(train_loader) * num_epochs
+    total_flops = 3 * flops_forward * steps
+
+    return flops_forward, total_flops, steps
+
+
+def proxy_compute(N, D, epochs):
+    return N * D * epochs
+
+
 
 # =========================================================
 # Training + Eval
@@ -230,6 +261,24 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
     train_loader, test_loader = load_datasets(batch_size, dataset_size, seed)
     model = build_model(width, depth, device)
 
+    # ================= Compute Accounting =================
+
+    N = count_parameters(model)
+    D = len(train_loader.dataset)
+
+    flops_forward, total_flops, steps = count_FLOPs(
+        model=model,
+        train_loader=train_loader,
+        num_epochs=num_epochs,
+        batch_size=batch_size,
+        device=device
+    )
+
+    print(f"Number of Parameters: {N}")
+    print(f"Dataset Size (D): {D}")
+    print(f"Forward FLOPs per batch: {flops_forward:.3e}")
+    print(f"Total Training FLOPs: {total_flops:.3e}")
+
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
@@ -312,8 +361,12 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
         "width": width,
         "depth": depth,
         "seed": seed,
-        "D": len(train_loader.dataset),
+        "N": N,
+        "D": D,
         "epochs": num_epochs,
+        "steps": steps,
+        "C_proxy": proxy_compute(N, D, num_epochs),
+        "total_flops": total_flops,
         "final_test_loss_avg_last5": final_loss_avg,
         "final_test_acc_avg_last5": final_acc_avg,
         "best_test_loss": best_test_loss,
