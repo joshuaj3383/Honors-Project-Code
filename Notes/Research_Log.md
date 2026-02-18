@@ -22,13 +22,17 @@ sits at a relatively small 290,000 parameters (compared to most other benchmarke
 
 
 ## Data is needed to test the following:  
-**Scaling laws for N, D, C:**  
+N: Number of Parameters in Model  
+D: Number of Datatokens in dataset
+C: Number of Compute operations (FLOPs)
+
+### Scaling laws for N, D, C (Part A):
 L(N,D,C) = Loss  
 L(N) ~ N^-a  
-L(D) ~ N^-b   
-L(C) ~ N^-c  
+L(D) ~ D^-b   
+L(C) ~ C^-c
 
-**Optimal N,D for fixed Compute C**
+### Optimal N,D for fixed Compute C (Part B):
 
 $L(N,D) = AN^{-a} + BD^{-b}$  
 $C = k * N * D * e$, e = number epochs, k = some constant  
@@ -54,10 +58,11 @@ $D \sim (N^{(a+b)/b})^{a/(a+b)}$
 $D \sim N^{a/b}$
 
 
-This implies that given fixed compute, the optimal loss is provided when $D \sim N^{a/b}$
+This implies that given fixed compute, the optimal loss is provided when $D \sim N^{a/b}$  
 
+This result will be tested in Part B using data collected in Part A
 
-**These are parameters to get data:**
+### These are parameters to get data:
 
     width = [8,16,32,64,128]  
     depth = [1,2,3]  
@@ -112,7 +117,14 @@ Throughout previous testing, the approximate number of FLOPs for a forward+backw
 This information can be used to verify the scaling law for C
 
 
-## Part B: Optimizing Over Fixed Compute TODO
+## Part A: Results
+
+Plotting log regressions gave values for A and a for each test.
+Almost all tests had very good regressions (r2 > 0.96) which signifies that the scaling is not just asymptotic, 
+but also describes learning in smaller models as well.
+
+
+## TODO: Part B: Optimizing Over Fixed Compute
 
 Since Part A gave strong results, these can be used to compare to optimal 
 
