@@ -1,5 +1,8 @@
 # Research Log
 
+## Goal:
+
+
 ## Benchmark Model Structure:
 
 Before testing over multiple hyperparameters, a benchmark model structure was required as a base.
@@ -111,15 +114,7 @@ This information can be used to verify the scaling law for C
 
 ## Part B: Optimizing Over Fixed Compute TODO
 
-
-
-    width = [16,19,22, ... 64], step=3
-    depth = [2]  
-    dataset_size = [50000]  
-    seed_choices = [0,1]
-
-    epochs = 
-    batch_size = 512
+Since Part A gave strong results, these can be used to compare to optimal 
 
 
 
