@@ -31,7 +31,7 @@ def set_seed(seed=0):
 
     # Makes everything as reproducible as possible
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.benchmark = True
 
 
 ####################################################
@@ -69,8 +69,21 @@ def load_datasets(batch_size=128, dataset_size=50000, seed=0):
         transform=transform_test
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True
+    )
 
     return train_loader, test_loader
 
@@ -169,7 +182,8 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
     loop = tqdm(loader, desc="Training", leave=False)
 
     for images, labels in loop:
-        images, labels = images.to(device), labels.to(device)
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
 
         optimizer.zero_grad()
         outputs = model(images)
@@ -193,7 +207,8 @@ def evaluate(model, loader, criterion, device):
 
     with torch.no_grad():
         for images, labels in loader:
-            images, labels = images.to(device), labels.to(device)
+            images = images.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
             outputs = model(images)
             loss = criterion(outputs, labels)
 
@@ -266,7 +281,7 @@ def append_summary(summary_row, base_dir):
 ####################################################
 
 def run_experiment(seed, batch_size, num_epochs, test_freq,
-                   width, depth, dataset_size, base_dir):
+                   width, depth, dataset_size, base_dir,lr=.1):
 
     ################ Setup ################
 
@@ -293,7 +308,7 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
     print(f"Total Training FLOPs: {total_flops:.3e}")
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
     checkpoint_dir = get_checkpoint_dir(base_dir, width, depth, seed, dataset_size)
@@ -410,7 +425,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--batch_size", type=int, default=512)
+    parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--test_freq", type=int, default=5)
     parser.add_argument("--width", type=int, default=32)

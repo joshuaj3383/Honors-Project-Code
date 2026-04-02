@@ -70,8 +70,8 @@ if __name__ == "__main__":
     JSON_FILE = "Experiment_Parameters.json"
 
     # Constants
-    batch_size = 512
-    num_epochs = 100
+    batch_size = 256
+    num_epochs = 50
     test_freq = 5
 
     # Train based on json file
