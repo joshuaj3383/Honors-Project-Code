@@ -2,62 +2,62 @@ import numpy as np
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 
-def add_csv(title,A, a, r2, filename="regression_data.csv"):
+def add_csv(title, A, a, L_base, r2, filename="regression_data.csv"):
     new_row = pd.DataFrame([{
         "Title": title,
         "A": A,
         "a": a,
+        "L_base": L_base,
         "r2": r2
     }])
 
     if os.path.exists(filename):
         df = pd.read_csv(filename)
-
-        # remove existing rows with same title
         df = df[df["Title"] != title]
-
-        # append new row
         df = pd.concat([df, new_row], ignore_index=True)
     else:
         df = new_row
 
-    # overwrite file
     df.to_csv(filename, index=False)
 
 
+# Model: L = A * X^{-a} + L_base
+def scaling_law(x, A, a, L_base):
+    return A * (x ** (-a)) + L_base
+
+
 def fit_and_graph(X, Y, title, x_label, y_label, log=False):
-    # Log space
-    logX = np.log(X)
-    logY = np.log(Y)
+    X = np.array(X)
+    Y = np.array(Y)
 
-    m, b = np.polyfit(logX, logY, 1)
+    # Initial guesses
+    A0 = max(Y)
+    a0 = 0.1
+    L0 = min(Y) * 0.9
 
-    # L(X) = Ax^-a
-    a, A = -m, np.exp(b)
+    params, _ = curve_fit(scaling_law, X, Y, p0=[A0, a0, L0], maxfev=10000)
+    A, a, L_base = params
 
+    Y_fit = scaling_law(X, A, a, L_base)
 
-    Y_pred = m * logX + b
-
-    r2 = 1 - np.sum((logY - Y_pred)**2) / np.sum((logY - np.mean(logY))**2)
+    # R^2 in original space
+    r2 = 1 - np.sum((Y - Y_fit)**2) / np.sum((Y - np.mean(Y))**2)
 
     print(f"{title}")
-    print(f"R^2:")
-    print(f"{r2}")
-    print(f"A, a:")
-    print(f"{A}, {a}")
+    print(f"R^2: {r2}")
+    print(f"A, a, L_base: {A}, {a}, {L_base}")
 
     plt.figure()
 
-    # General for original space
-    X_fit = np.linspace(min(X), max(X), 200)
-    Y_fit = A * X_fit ** (-a)
+    X_smooth = np.linspace(min(X), max(X), 200)
+    Y_smooth = scaling_law(X_smooth, A, a, L_base)
 
-    plt.scatter(X, Y, label="data", s=25,c="blue")
-    plt.plot(X_fit, Y_fit, label="fit",c="red")
+    plt.scatter(X, Y, label="data", s=25)
+    plt.plot(X_smooth, Y_smooth, label="fit")
 
-    # Convert to log space if requested
     if log:
         plt.xscale("log")
         plt.yscale("log")
@@ -68,95 +68,91 @@ def fit_and_graph(X, Y, title, x_label, y_label, log=False):
     plt.legend()
     plt.show()
 
-
-    add_csv(title, A, a, r2)
-
+    add_csv(title, A, a, L_base, r2)
 
 
+# ----------- CLEAN EXPERIMENTS ONLY -----------
 
-def N_width(df,log=False):
-    # Extract only varying width
+def N_width(df, log=False):
     df = df[(df["depth"] == 2) & (df["D"] == 50000)]
-
+    df = df.groupby("N").mean().reset_index()   # average seeds
     df = df.sort_values("N")
 
-    N = df["N"].values
-    L = df["final_test_loss_avg_last5"].values
+    fit_and_graph(
+        df["N"].values,
+        df["final_test_loss_avg_last5"].values,
+        "N-Width vs Loss",
+        "N",
+        "Loss",
+        log
+    )
 
-    fit_and_graph(N, L, "N-Width vs Loss", "N-Width", "Loss", log=log)
 
-def N_depth(df,log=False):
-    # Extract Only varying depth
+def N_depth(df, log=False):
     df = df[(df["width"] == 32) & (df["D"] == 50000)]
-
-    df = df.sort_values("N") # Make sure N is increasing
-
-    N = df["N"].values
-    L = df["final_test_loss_avg_last5"].values
-
-    fit_and_graph(N, L, "N-Depth vs Loss", "N-Depth", "Loss", log=log)
-
-def N_general(df,log=False):
-    df = df[df["D"] == 50000]
-
+    df = df.groupby("N").mean().reset_index()
     df = df.sort_values("N")
 
-    N = df["N"].values
-    L = df["final_test_loss_avg_last5"].values
+    fit_and_graph(
+        df["N"].values,
+        df["final_test_loss_avg_last5"].values,
+        "N-Depth vs Loss",
+        "N",
+        "Loss",
+        log
+    )
 
-    fit_and_graph(N, L, "N-General vs Loss", "N-General", "Loss", log=log)
 
-
-def D_general(df,log=False):
+def D_general(df, log=False):
     df = df[(df["width"] == 32) & (df["depth"] == 2)]
-
+    df = df.groupby("D").mean().reset_index()
     df = df.sort_values("D")
 
-    D = df["D"].values
-    L = df["final_test_loss_avg_last5"].values
+    fit_and_graph(
+        df["D"].values,
+        df["final_test_loss_avg_last5"].values,
+        "D vs Loss",
+        "D",
+        "Loss",
+        log
+    )
 
-    fit_and_graph(D, L, "D_General vs Loss", "D_General", "Loss", log=log)
 
-
-def C_Nscaling(df,log=False):
+def C_Nscaling(df, log=False):
     df = df[df["D"] == 50000]
-
+    df = df.groupby("total_flops").mean().reset_index()
     df = df.sort_values("total_flops")
 
-    C = df["total_flops"].values
-    L = df["final_test_loss_avg_last5"].values
+    fit_and_graph(
+        df["total_flops"].values,
+        df["final_test_loss_avg_last5"].values,
+        "C (N-scaling) vs Loss",
+        "C",
+        "Loss",
+        log
+    )
 
-    fit_and_graph(C, L, "C_Nscaling", "C_Nscaling", "Loss", log=log)
 
-def C_Dsclaing(df,log=False):
-    df = df[(df["width"] == 32)& (df["depth"] == 2)]
-
+def C_Dscaling(df, log=False):
+    df = df[(df["width"] == 32) & (df["depth"] == 2)]
+    df = df.groupby("total_flops").mean().reset_index()
     df = df.sort_values("total_flops")
 
-    C = df["total_flops"].values
-    L = df["final_test_loss_avg_last5"].values
-
-    fit_and_graph(C, L, "C_Dscaling", "C_Dscaling", "Loss", log=log)
-
-def C_general(df,log=False):
-    df = df.sort_values("total_flops")
-
-    C = df["total_flops"].values
-    L = df["final_test_loss_avg_last5"].values
-
-    fit_and_graph(C, L, "C_General vs Loss", "C_General", "Loss", log=log)
+    fit_and_graph(
+        df["total_flops"].values,
+        df["final_test_loss_avg_last5"].values,
+        "C (D-scaling) vs Loss",
+        "C",
+        "Loss",
+        log
+    )
 
 
 if __name__ == "__main__":
-    file = "final_data.csv"
+    df = pd.read_csv("final_data.csv")
 
-    with open(file) as f:
-        df = pd.read_csv(f)
-
-        N_width(df)
-        N_depth(df)
-        N_general(df)
-        D_general(df)
-        C_Nscaling(df)
-        C_Dsclaing(df)
-        C_general(df)
+    N_width(df, log=True)
+    N_depth(df, log=True)
+    D_general(df, log=True)
+    C_Nscaling(df, log=True)
+    C_Dscaling(df, log=True)

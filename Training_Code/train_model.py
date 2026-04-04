@@ -224,11 +224,11 @@ def evaluate(model, loader, criterion, device):
 #              Notebook Checkpoints                #
 ####################################################
 
-def get_checkpoint_dir(base_dir, width, depth, seed, dataset_size):
+def get_checkpoint_dir(base_dir, width, depth, seed, dataset_size, batch_size, num_epochs):
     path = os.path.join(
         base_dir,
         "checkpoints",
-        f"width{width}_depth{depth}_seed{seed}_D{dataset_size}"
+        f"width{width}_depth{depth}_seed{seed}_D{dataset_size}_bs{batch_size}_ep{num_epochs}"
     )
     os.makedirs(path, exist_ok=True)
     return path
@@ -311,7 +311,9 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
-    checkpoint_dir = get_checkpoint_dir(base_dir, width, depth, seed, dataset_size)
+    checkpoint_dir = get_checkpoint_dir(
+        base_dir, width, depth, seed, dataset_size, batch_size, num_epochs
+    )
     checkpoint = load_checkpoint(checkpoint_dir, model, optimizer, scheduler, device)
 
     start_epoch = 0
@@ -400,6 +402,7 @@ def run_experiment(seed, batch_size, num_epochs, test_freq,
         "width": width,
         "depth": depth,
         "seed": seed,
+        "batch_size": batch_size,
         "N": N,
         "D": D,
         "epochs": num_epochs,
