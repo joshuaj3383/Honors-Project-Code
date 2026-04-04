@@ -12,9 +12,9 @@ def scaling_law_2d(X, A, a, B, b, L_min):
     return A * (N ** (-a)) + B * (D ** (-b)) + L_min
 
 
-def save_result(A, a, B, b, L_min, r2, filename):
+def save_result(A, a, B, b, L_min, r2, input_file, output_file):
     new_row = pd.DataFrame([{
-        "Title": "NxD regression",
+        "Title": input_file,
         "A": A,
         "a": a,
         "B": B,
@@ -23,17 +23,17 @@ def save_result(A, a, B, b, L_min, r2, filename):
         "r2": r2
     }])
 
-    if os.path.exists(filename):
-        df = pd.read_csv(filename)
-        df = df[df["Title"] != "NxD regression"]
+    if os.path.exists(output_file):
+        df = pd.read_csv(output_file)
+        df = df[df["Title"] != input_file]
         df = pd.concat([df, new_row], ignore_index=True)
     else:
         df = new_row
 
-    df.to_csv(filename, index=False)
+    df.to_csv(output_file, index=False)
 
 
-def fit_nd(df, output_file):
+def fit_nd(df, input_file, output_file):
     df = df.copy()
 
     # Keep clean regime
@@ -110,9 +110,11 @@ def fit_nd(df, output_file):
     plt.legend()
     plt.show()
 
-    save_result(A, a, B, b, L_min, r2, filename=output_file)
+    save_result(A, a, B, b, L_min, r2, input_file, output_file)
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("final_data.csv")
-    fit_nd(df, output_file="nd_regression.csv")
+    input_file = "final_data.csv"
+    output_file = "nd_regression.csv"
+    df = pd.read_csv(input_file)
+    fit_nd(df, input_file, output_file)
