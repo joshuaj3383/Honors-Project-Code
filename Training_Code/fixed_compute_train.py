@@ -16,7 +16,7 @@ def get_epochs(width: int, depth: int = 2, fixed_flops: int = 5748850000000, D: 
 
     return max(1,round(fixed_flops / (N * D)))
 
-def get_FLOPs(width: int, depth: int = 2, D: int = 50000, epochs: int = 100) -> int:
+def get_FLOPs(width: int, depth: int = 2, D: int = 50000, epochs: int = 50) -> int:
     test_model = CNN(width, depth)
     N = count_parameters(test_model)
     return proxy_compute(N,D,epochs)
@@ -35,35 +35,35 @@ def train(
     results_dir = os.path.join(base_dir, "results")
     os.makedirs(results_dir, exist_ok=True)
 
-    summary_path = os.path.join(results_dir, "final_data.csv")
+    summary_path = os.path.join(results_dir, "fixed_compute_data.csv")
 
     df = None
     if os.path.exists(summary_path):
         df = pd.read_csv(summary_path)
 
     for width in widths:
-        # Check if done
+        epochs = get_epochs(width, depth, fixed_flops, dataset_size)
+
         if df is not None:
             already_done = (
                     (df["seed"] == seed) &
                     (df["width"] == width) &
                     (df["depth"] == depth) &
-                    (df["D"] == dataset_size)
+                    (df["D"] == dataset_size) &
+                    (df["epochs"] == epochs)
             ).any()
 
             if already_done:
-                print(f"Skipping: w={width}, d={depth}, D={dataset_size}, seed={seed}")
+                print(f"Skipping: w={width}, epochs={epochs}")
                 continue
 
-        print(f"Running: w={width}, d={depth}, D={dataset_size}, seed={seed}")
+        actual_C = get_FLOPs(width, depth, dataset_size, epochs)
+        print(f"Running: w={width}, epochs={epochs}, C≈{actual_C:.2e}")
 
-
-
-        # Train a model based on these parameters
         run_experiment(
             seed=seed,
             batch_size=batch_size,
-            num_epochs=get_epochs(width=width, depth=depth, fixed_flops=fixed_flops, D=dataset_size),
+            num_epochs=epochs,
             test_freq=test_freq,
             width=width,
             depth=depth,
@@ -78,14 +78,14 @@ if __name__ == "__main__":
 
 
     # Constants
-    widths = range(16, 81, 8)
+    widths = range(32,57,8)
     depth = 2
     dataset_size = 50000
     seed = 1
     batch_size = 256
     test_freq = 10
 
-    fixed_flops = get_FLOPs(32, depth, dataset_size, 100)
+    fixed_flops = get_FLOPs(32, depth, dataset_size, 50)
 
     train(
         widths,
@@ -97,18 +97,3 @@ if __name__ == "__main__":
         base_dir=BASE_DIR,
         fixed_flops=fixed_flops,
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
