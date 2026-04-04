@@ -44,7 +44,10 @@ def fit_nd(df, input_file, output_file):
 
 
     N = df["N"].values
-    D = (df["D"] * df["epochs"]).values
+    if input_file == "final_data.csv":
+        D_eff = df["D"].values
+    elif input_file == "n_epochs_data.csv":
+        D_eff = df["D"].values * df["epochs"].values
     L = df["final_test_loss_avg_last5"].values
 
     # Initial guesses
@@ -56,7 +59,7 @@ def fit_nd(df, input_file, output_file):
 
     params, _ = curve_fit(
         scaling_law_2d,
-        (N, D),
+        (N, D_eff),
         L,
         p0=[A0, a0, B0, b0, L0],
         bounds=([0, 0, 0, 0, 0], [np.inf, np.inf, np.inf, np.inf, np.inf]),
@@ -65,7 +68,7 @@ def fit_nd(df, input_file, output_file):
 
     A, a, B, b, L_min = params
 
-    L_pred = scaling_law_2d((N, D), A, a, B, b, L_min)
+    L_pred = scaling_law_2d((N, D_eff), A, a, B, b, L_min)
 
     r2 = 1 - np.sum((L - L_pred)**2) / np.sum((L - np.mean(L))**2)
 
@@ -90,11 +93,11 @@ def fit_nd(df, input_file, output_file):
     ax.view_init(elev=30, azim=20)
 
     # Scatter actual data
-    ax.scatter(N, D, L, s=30, label="data")
+    ax.scatter(N, D_eff, L, s=30, label="data")
 
     # Create smooth grid
     N_lin = np.linspace(min(N), max(N), 40)
-    D_lin = np.linspace(min(D), max(D), 40)
+    D_lin = np.linspace(min(D_eff), max(D_eff), 40)
     N_grid, D_grid = np.meshgrid(N_lin, D_lin)
 
     L_grid = scaling_law_2d((N_grid, D_grid), A, a, B, b, L_min)
