@@ -29,7 +29,7 @@ def scaling_law(x, A, a, L_base):
     return A * (x ** (-a)) + L_base
 
 
-def fit_and_graph(X, Y, title, x_label, y_label, log=False):
+def fit_and_graph(X, Y, title, x_label, y_label, scale="normal"):
     X = np.array(X)
     Y = np.array(Y)
 
@@ -58,9 +58,15 @@ def fit_and_graph(X, Y, title, x_label, y_label, log=False):
     plt.scatter(X, Y, label="data", s=25)
     plt.plot(X_smooth, Y_smooth, label="fit")
 
-    if log:
+    # Scale control
+    if scale == "loglog":
         plt.xscale("log")
         plt.yscale("log")
+    elif scale == "semilogx":
+        plt.xscale("log")
+    elif scale == "semilogy":
+        plt.yscale("log")
+    # else: "normal" → no scaling
 
     plt.xlabel(x_label)
     plt.ylabel(y_label)
@@ -120,6 +126,7 @@ def D_general(df, log=False):
 
 def C_Nscaling(df, log=False):
     df = df[df["D"] == 50000]
+    df = df[df["depth"] == 2]
     df = df.groupby("total_flops").mean().reset_index()
     df = df.sort_values("total_flops")
 
